@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using VisionClient.Interop;
 using VisionClient.Models;
 
 namespace VisionClient.Services;
@@ -44,7 +45,7 @@ public class MockVisionService : IVisionService
             bool isOk = (_frameCounter % 10) != 0; // 10프레임마다 1번 NG 시뮬레이션
             string msg = isOk ? $"Frame #{_frameCounter}: PASS" : $"Frame #{_frameCounter}: DEFECT DETECTED";
 
-            return new InspectionResult(buffer, width, height, isOk, sw.Elapsed.TotalMilliseconds, msg);
+            return new InspectionResult(buffer, width, height, isOk, sw.Elapsed.TotalMilliseconds, msg, Array.Empty<DefectInfo>());
         }, ct);
     }
 }

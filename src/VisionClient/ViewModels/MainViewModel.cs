@@ -40,7 +40,8 @@ public partial class MainViewModel : ObservableObject
 
     public MainViewModel()
     {
-        _visionService = new MockVisionService();
+        //_visionService = new MockVisionService();
+        _visionService = new NativeVisionService();
         // Bgr24 포맷으로 WriteableBitmap 사전 할당 (재할당 방지)
         _displayImage = new WriteableBitmap(ImageWidth, ImageHeight, 96, 96, PixelFormats.Bgr24, null);
     }

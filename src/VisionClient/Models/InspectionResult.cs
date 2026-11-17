@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using VisionClient.Interop;
 
 namespace VisionClient.Models;
 
@@ -12,5 +13,6 @@ public record InspectionResult(
     int Height,
     bool IsOk,
     double ProcessTimeMs,
-    string Message
+    string Message,
+    IReadOnlyList<DefectInfo> Defects
 );

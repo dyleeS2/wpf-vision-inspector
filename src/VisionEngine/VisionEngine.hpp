@@ -36,4 +36,19 @@ extern "C" {
         int maxDefects,
         InspectionSummary* outSummary
     );
+
+    // Inspect the ROI and report defect boxes in full-frame coordinates.
+    VISION_API int InspectFrameInRoi(
+        uint8_t* imageData,
+        int width,
+        int height,
+        int stride,
+        int roiX,
+        int roiY,
+        int roiWidth,
+        int roiHeight,
+        DefectInfo* outDefects,
+        int maxDefects,
+        InspectionSummary* outSummary
+    );
 }

@@ -35,4 +35,19 @@ public static class VisionNative
         int maxDefects,
         out InspectionSummary outSummary
     );
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int InspectFrameInRoi(
+        IntPtr imageData,
+        int width,
+        int height,
+        int stride,
+        int roiX,
+        int roiY,
+        int roiWidth,
+        int roiHeight,
+        [Out] DefectInfo[] outDefects,
+        int maxDefects,
+        out InspectionSummary outSummary
+    );
 }

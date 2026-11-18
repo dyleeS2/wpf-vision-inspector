@@ -49,7 +49,7 @@ public partial class MainViewModel : ObservableObject
     private async Task GrabOnceAsync()
     {
         if (IsLiveRunning) return;
-        var result = await _visionService.GrabAndInspectAsync(ImageWidth, ImageHeight);
+        var result = await GrabCurrentRoiAsync();
         ApplyResultToUi(result);
     }
 
@@ -70,7 +70,7 @@ public partial class MainViewModel : ObservableObject
         {
             while (!_liveCts.Token.IsCancellationRequested)
             {
-                var result = await _visionService.GrabAndInspectAsync(ImageWidth, ImageHeight, _liveCts.Token);
+                var result = await GrabCurrentRoiAsync(_liveCts.Token);
                 ApplyResultToUi(result);
             }
         }
@@ -82,6 +82,18 @@ public partial class MainViewModel : ObservableObject
         {
             IsLiveRunning = false;
         }
+    }
+
+    private Task<InspectionResult> GrabCurrentRoiAsync(CancellationToken ct = default)
+    {
+        var roi = InspectionRoi;
+        // Pixel coordinates inside [left, right) and [top, bottom).
+        int left = (int)Math.Ceiling(roi.X);
+        int top = (int)Math.Ceiling(roi.Y);
+        int right = (int)Math.Ceiling(roi.X + roi.Width);
+        int bottom = (int)Math.Ceiling(roi.Y + roi.Height);
+        var bounds = new Int32Rect(left, top, right - left, bottom - top);
+        return _visionService.GrabAndInspectAsync(ImageWidth, ImageHeight, ct, bounds);
     }
 
     private void ApplyResultToUi(InspectionResult result)

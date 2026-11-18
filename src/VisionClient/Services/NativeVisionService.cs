@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using VisionClient.Interop;
 using VisionClient.Models;
 
@@ -13,8 +14,16 @@ public class NativeVisionService : IVisionService
     private int _frameCounter;
     private const int MaxDefects = 50;
 
-    public async Task<InspectionResult> GrabAndInspectAsync(int width, int height, CancellationToken ct = default)
+    public async Task<InspectionResult> GrabAndInspectAsync(int width, int height, CancellationToken ct = default,
+        Int32Rect? roi = null)
     {
+        var bounds = roi ?? new Int32Rect(0, 0, width, height);
+        if (bounds.X < 0 || bounds.Y < 0 || bounds.Width <= 0 || bounds.Height <= 0 ||
+            bounds.X > width - bounds.Width || bounds.Y > height - bounds.Height)
+        {
+            throw new ArgumentOutOfRangeException(nameof(roi), "The inspection ROI must be within the frame.");
+        }
+
         return await Task.Run(() =>
         {
             ct.ThrowIfCancellationRequested();
@@ -43,11 +52,15 @@ public class NativeVisionService : IVisionService
             {
                 fixed (byte* pBuffer = buffer)
                 {
-                    statusCode = VisionNative.InspectFrame(
+                    statusCode = VisionNative.InspectFrameInRoi(
                         (IntPtr)pBuffer,
                         width,
                         height,
                         stride,
+                        bounds.X,
+                        bounds.Y,
+                        bounds.Width,
+                        bounds.Height,
                         defects,
                         MaxDefects,
                         out summary

@@ -1,29 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Runtime.InteropServices;
 
 namespace VisionClient.Interop;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct DefectInfo
 {
-    public int Id;
-    public int X;
-    public int Y;
-    public int Width;
-    public int Height;
-    public double Area;
+    public int Id { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public double Area { get; set; }
 }
 
 [StructLayout(LayoutKind.Sequential)]
 public struct InspectionSummary
 {
-    public int IsOk;
-    public int DefectCount;
-    public double ProcessTimeMs;
+    public int IsOk { get; set; }
+    public int DefectCount { get; set; }
+    public double ProcessTimeMs { get; set; }
 }
 
 public static class VisionNative

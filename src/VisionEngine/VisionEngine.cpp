@@ -45,8 +45,8 @@ extern "C" {
                     area
                 };
 
-                // 확인용: 원본 버퍼 위에 C++에서 직접 빨간 바운딩 박스 그리기
-                cv::rectangle(frame, box, cv::Scalar(0, 0, 255), 3);
+                // [3단계 변경] 원본 이미지 훼손 방지를 위해 C++ 직접 드로잉 제거 (WPF Canvas로 이관)
+                //cv::rectangle(frame, box, cv::Scalar(0, 0, 255), 3);
                 count++;
             }
         }

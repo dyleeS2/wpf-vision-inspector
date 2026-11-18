@@ -1,14 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using VisionClient.Interop;
 using VisionClient.Models;
 using VisionClient.Services;
 
@@ -36,13 +32,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLiveRunning;
 
+    // [3단계 추가] 사용자 지정 ROI 및 검출된 결함 벡터 컬렉션
+    [ObservableProperty]
+    private RoiBox _inspectionRoi = new();
+
+    public ObservableCollection<DefectInfo> Defects { get; } = new();
     public ObservableCollection<string> Logs { get; } = new();
 
     public MainViewModel()
     {
-        //_visionService = new MockVisionService();
         _visionService = new NativeVisionService();
-        // Bgr24 포맷으로 WriteableBitmap 사전 할당 (재할당 방지)
         _displayImage = new WriteableBitmap(ImageWidth, ImageHeight, 96, 96, PixelFormats.Bgr24, null);
     }
 
@@ -54,7 +53,7 @@ public partial class MainViewModel : ObservableObject
         ApplyResultToUi(result);
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleLiveAsync()
     {
         if (IsLiveRunning)
@@ -87,7 +86,6 @@ public partial class MainViewModel : ObservableObject
 
     private void ApplyResultToUi(InspectionResult result)
     {
-        // WriteableBitmap은 UI 스레드에서만 Lock/Unlock 가능
         Application.Current.Dispatcher.Invoke(() =>
         {
             DisplayImage.Lock();
@@ -106,6 +104,13 @@ public partial class MainViewModel : ObservableObject
             finally
             {
                 DisplayImage.Unlock();
+            }
+
+            // [3단계 추가] 결함 벡터 오버레이 갱신
+            Defects.Clear();
+            foreach (var defect in result.Defects)
+            {
+                Defects.Add(defect);
             }
 
             StatusText = result.IsOk ? "OK" : "NG";

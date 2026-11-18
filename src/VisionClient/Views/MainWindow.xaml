@@ -1,10 +1,10 @@
-﻿<Window
+﻿<Window x:Class="VisionClient.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:VisionClient.ViewModels"
-        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="VisionClient.Views.MainWindow"
-        Title="WPF Vision Client Skeleton" Height="760" Width="1200"
-        Background="#1E1E1E" Foreground="White">
+        Title="WPF Vision Inspector" Height="780" Width="1240"
+        Background="#1E1E1E" Foreground="White"
+        Loaded="Window_Loaded">
 
     <Window.DataContext>
         <vm:MainViewModel />
@@ -16,14 +16,109 @@
             <ColumnDefinition Width="320" />
         </Grid.ColumnDefinitions>
 
-        <!-- 좌측: 고속 영상 뷰어 영역 -->
-        <Border Grid.Column="0" Background="#111111" BorderBrush="#333333" BorderThickness="1" Margin="0,0,10,0">
-            <Image Source="{Binding DisplayImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+        <!-- 좌측: 줌/팬 및 오버레이 지원 고속 영상 뷰어 -->
+        <Border x:Name="ViewerViewport"
+                Grid.Column="0"
+                Background="#111111"
+                BorderBrush="#333333"
+                BorderThickness="1"
+                Margin="0,0,10,0"
+                ClipToBounds="True"
+                MouseWheel="ViewerViewport_MouseWheel"
+                MouseRightButtonDown="ViewerViewport_MouseRightButtonDown"
+                MouseRightButtonUp="ViewerViewport_MouseRightButtonUp"
+                MouseMove="ViewerViewport_MouseMove">
+
+            <!-- 바깥쪽 Canvas: 부모 Border 크기에 의해 1280x1024 영역이 잘리는 현상 방지 -->
+            <Canvas Background="Transparent">
+
+                <!-- 이미지 원본 해상도(1280x1024) 기준 1:1 좌표 컨테이너 -->
+                <Grid x:Name="ImageCanvasContainer"
+                      Width="1280"
+                      Height="1024"
+                      RenderTransformOrigin="0,0">
+                    <Grid.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform x:Name="ImgScaleTransform" ScaleX="1" ScaleY="1" />
+                            <TranslateTransform x:Name="ImgTranslateTransform" X="0" Y="0" />
+                        </TransformGroup>
+                    </Grid.RenderTransform>
+
+                    <!-- 1. 원본 영상 레이어 -->
+                    <Image Source="{Binding DisplayImage}"
+                           Width="1280"
+                           Height="1024"
+                           Stretch="Fill"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor" />
+
+                    <!-- 2. 벡터 오버레이 레이어 (ROI 및 결함 바운딩 박스) -->
+                    <Canvas Width="1280" Height="1024" Background="Transparent">
+                        <!--검사영역(ROI)-->
+                        <Thumb Canvas.Left="{Binding InspectionRoi.X}"
+                               Canvas.Top="{Binding InspectionRoi.Y}"
+                               Width="{Binding InspectionRoi.Width}"
+                               Height="{Binding InspectionRoi.Height}"
+                               DragDelta="RoiThumb_DragDelta"
+                               Cursor="SizeAll">
+
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border BorderBrush="#FFD700" BorderThickness="2" Background="#15FFD700">
+                                        <TextBlock Text="INSPECTION ROI"
+                                                   Foreground="#FFD700"
+                                                   Background="#99000000"
+                                                   FontSize="14"
+                                                   FontWeight="Bold"
+                                                   Padding="4,2"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Top" />
+                                    </Border>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+
+                        <!-- C++ DLL 결함 검출 결과 동적 바인딩 -->
+                        <ItemsControl ItemsSource="{Binding Defects}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                    <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <Border Width="{Binding Width}"
+                                            Height="{Binding Height}"
+                                            HorizontalAlignment="Left"
+                                            BorderBrush="#FF3B30"
+                                            BorderThickness="3"
+                                            Background="#22FF3B30" />
+                                        <Border Background="#CCFF3B30" Padding="4,1" HorizontalAlignment="Left">
+                                            <TextBlock Foreground="White" FontSize="13" FontWeight="Bold">
+                                        <Run Text="NG #" /><Run Text="{Binding Id}" />
+                                        <Run Text=" (" /><Run Text="{Binding Area, StringFormat=F0}" /><Run Text=" px)" />
+                                            </TextBlock>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Canvas>
+                </Grid>
+
+            </Canvas>
         </Border>
 
         <!-- 우측: 제어 및 판정 결과 패널 -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -37,12 +132,12 @@
                 </StackPanel>
             </Border>
 
-            <!-- 트리거 버튼 -->
+            <!-- 트리거 및 뷰 리셋 버튼 -->
             <StackPanel Grid.Row="1" Margin="0,0,0,10">
-                <Button Content="Single Grab" Command="{Binding GrabOnceCommand}" Height="40" Margin="0,0,0,6" FontWeight="Bold" />
-                <Button Command="{Binding ToggleLiveCommand}" Height="40" FontWeight="Bold">
+                <Button Content="Single Grab" Command="{Binding GrabOnceCommand}" Height="38" Margin="0,0,0,6" FontWeight="Bold" />
+                <Button Command="{Binding ToggleLiveCommand}" Height="38" Margin="0,0,0,6" FontWeight="Bold">
                     <Button.Style>
-                        <Style TargetType="{x:Type Button}">
+                        <Style TargetType="Button">
                             <Setter Property="Content" Value="Start Live" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsLiveRunning}" Value="True">
@@ -54,10 +149,21 @@
                         </Style>
                     </Button.Style>
                 </Button>
+                <Button Content="Fit View (Reset Zoom)" Click="ResetZoomButton_Click" Height="32" />
             </StackPanel>
 
+            <!-- ROI 좌표 실시간 표시 -->
+            <GroupBox Grid.Row="2" Header="ROI Coordinates (px)" BorderBrush="#444444" Margin="0,0,0,10" Padding="6">
+                <UniformGrid Columns="2">
+                    <TextBlock Text="{Binding InspectionRoi.X, StringFormat='X: {0:F0}'}" FontFamily="Consolas" />
+                    <TextBlock Text="{Binding InspectionRoi.Y, StringFormat='Y: {0:F0}'}" FontFamily="Consolas" />
+                    <TextBlock Text="{Binding InspectionRoi.Width, StringFormat='W: {0:F0}'}" FontFamily="Consolas" />
+                    <TextBlock Text="{Binding InspectionRoi.Height, StringFormat='H: {0:F0}'}" FontFamily="Consolas" />
+                </UniformGrid>
+            </GroupBox>
+
             <!-- 검사 로그 -->
-            <GroupBox Grid.Row="2" Header="Inspection Logs" BorderBrush="#444444">
+            <GroupBox Grid.Row="3" Header="Inspection Logs" BorderBrush="#444444">
                 <ListBox ItemsSource="{Binding Logs}" Background="#141414" Foreground="#CCCCCC" BorderThickness="0" FontFamily="Consolas" FontSize="11" />
             </GroupBox>
         </Grid>

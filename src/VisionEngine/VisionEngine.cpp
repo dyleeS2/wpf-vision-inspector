@@ -14,7 +14,28 @@ extern "C" {
         int maxDefects,
         InspectionSummary* outSummary)
     {
+        return InspectFrameInRoi(imageData, width, height, stride, 0, 0, width, height,
+            outDefects, maxDefects, outSummary);
+    }
+
+    VISION_API int InspectFrameInRoi(
+        uint8_t* imageData,
+        int width,
+        int height,
+        int stride,
+        int roiX,
+        int roiY,
+        int roiWidth,
+        int roiHeight,
+        DefectInfo* outDefects,
+        int maxDefects,
+        InspectionSummary* outSummary)
+    {
         if (!imageData || !outDefects || !outSummary) return -1;
+
+        if (width <= 0 || height <= 0 || stride / 3 < width ||
+            roiX < 0 || roiY < 0 || roiWidth <= 0 || roiHeight <= 0 ||
+            roiX > width - roiWidth || roiY > height - roiHeight) return -2;
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -23,7 +44,7 @@ extern "C" {
 
         // 2. 영상 처리 시뮬레이션: 그레이스케일 변환 및 이진화(Threshold)로 어두운 이물 검출
         cv::Mat gray, binary;
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(frame(cv::Rect(roiX, roiY, roiWidth, roiHeight)), gray, cv::COLOR_BGR2GRAY);
         cv::threshold(gray, binary, 60, 255, cv::THRESH_BINARY_INV);
 
         std::vector<std::vector<cv::Point>> contours;
@@ -38,15 +59,15 @@ extern "C" {
                 cv::Rect box = cv::boundingRect(contour);
                 outDefects[count] = DefectInfo{
                     count + 1,
-                    box.x,
-                    box.y,
+                    box.x + roiX,
+                    box.y + roiY,
                     box.width,
                     box.height,
                     area
                 };
 
-                // 확인용: 원본 버퍼 위에 C++에서 직접 빨간 바운딩 박스 그리기
-                cv::rectangle(frame, box, cv::Scalar(0, 0, 255), 3);
+                // [3단계 변경] 원본 이미지 훼손 방지를 위해 C++ 직접 드로잉 제거 (WPF Canvas로 이관)
+                //cv::rectangle(frame, box, cv::Scalar(0, 0, 255), 3);
                 count++;
             }
         }

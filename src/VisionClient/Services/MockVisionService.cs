@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Windows;
 using VisionClient.Interop;
 using VisionClient.Models;
 
@@ -13,7 +14,8 @@ public class MockVisionService : IVisionService
 {
     private int _frameCounter;
 
-    public async Task<InspectionResult> GrabAndInspectAsync(int width, int height, CancellationToken ct = default)
+    public async Task<InspectionResult> GrabAndInspectAsync(int width, int height, CancellationToken ct = default,
+        Int32Rect? roi = null)
     {
         var sw = Stopwatch.StartNew();
 

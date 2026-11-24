@@ -15,7 +15,9 @@ public partial class MainViewModel : ObservableObject
     private const int ImageWidth = 1280;
     private const int ImageHeight = 1024;
     private readonly IVisionService _visionService;
+    // 현재 Live 세션의 취소 소스와 루프 Task. 세션이 끝나면 루프 자신이 정리한다.
     private CancellationTokenSource? _liveCts;
+    private Task? _liveTask;
 
     [ObservableProperty]
     private WriteableBitmap _displayImage;
@@ -45,42 +47,83 @@ public partial class MainViewModel : ObservableObject
         _displayImage = new WriteableBitmap(ImageWidth, ImageHeight, 96, 96, PixelFormats.Bgr24, null);
     }
 
+    private bool IsLiveLoopActive => _liveTask is { IsCompleted: false };
+
     [RelayCommand]
     private async Task GrabOnceAsync()
     {
-        if (IsLiveRunning) return;
-        var result = await GrabCurrentRoiAsync();
-        ApplyResultToUi(result);
+        if (IsLiveRunning || IsLiveLoopActive) return;
+        try
+        {
+            var result = await GrabCurrentRoiAsync();
+            ApplyResultToUi(result);
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex);
+        }
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleLiveAsync()
     {
-        if (IsLiveRunning)
+        // 이전 루프가 아직 끝나지 않았다면(정지 진행 중 포함) 새 세션을 시작하지 않고
+        // 정지를 요청한 뒤 루프 종료까지 기다린다.
+        if (IsLiveLoopActive)
         {
-            _liveCts?.Cancel();
-            IsLiveRunning = false;
+            await StopLiveAsync();
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        _liveCts = cts;
         IsLiveRunning = true;
-        _liveCts = new CancellationTokenSource();
+        _liveTask = RunLiveLoopAsync(cts);
+        await _liveTask;
+    }
 
+    private async Task StopLiveAsync()
+    {
+        var task = _liveTask;
+        if (task is null) return;
+
+        _liveCts?.Cancel();
+        // 진행 중인 프레임까지 끝난 뒤 루프의 finally에서 상태가 초기화된다.
+        await task;
+    }
+
+    private async Task RunLiveLoopAsync(CancellationTokenSource cts)
+    {
+        // 세션별 토큰을 지역 변수로 고정해 이후 세션의 _liveCts와 섞이지 않게 한다.
+        var token = cts.Token;
+        AddLog("Live inspection started.");
         try
         {
-            while (!_liveCts.Token.IsCancellationRequested)
+            while (!token.IsCancellationRequested)
             {
-                var result = await GrabCurrentRoiAsync(_liveCts.Token);
+                var result = await GrabCurrentRoiAsync(token);
+                if (token.IsCancellationRequested) break;
                 ApplyResultToUi(result);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            AddLog("Live inspection stopped.");
+            // 정상 정지
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex);
         }
         finally
         {
-            IsLiveRunning = false;
+            // 자기 세션일 때만 공유 상태를 초기화한다.
+            if (ReferenceEquals(_liveCts, cts))
+            {
+                _liveCts = null;
+                IsLiveRunning = false;
+            }
+            cts.Dispose();
+            AddLog("Live inspection stopped.");
         }
     }
 
@@ -130,6 +173,13 @@ public partial class MainViewModel : ObservableObject
             CycleTimeText = $"{result.ProcessTimeMs:F1} ms";
             AddLog(result.Message);
         });
+    }
+
+    private void ReportError(Exception ex)
+    {
+        StatusText = "ERROR";
+        StatusColor = Brushes.OrangeRed;
+        AddLog($"Error: {ex.GetType().Name} - {ex.Message}");
     }
 
     private void AddLog(string message)

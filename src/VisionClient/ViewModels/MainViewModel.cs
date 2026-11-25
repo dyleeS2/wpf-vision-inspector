@@ -32,7 +32,14 @@ public partial class MainViewModel : ObservableObject
     private string _cycleTimeText = "0.0 ms";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GrabOnceCommand))]
     private bool _isLiveRunning;
+
+    // Single Grab 진행 중 여부. Single Grab과 Live 검사는 동시에 실행되지 않는다.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GrabOnceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleLiveCommand))]
+    private bool _isGrabbing;
 
     // [3단계 추가] 사용자 지정 ROI 및 검출된 결함 벡터 컬렉션
     [ObservableProperty]
@@ -49,10 +56,17 @@ public partial class MainViewModel : ObservableObject
 
     private bool IsLiveLoopActive => _liveTask is { IsCompleted: false };
 
-    [RelayCommand]
+    // IsLiveRunning은 Live 루프가 완전히 끝날 때(루프의 finally)까지 true로 유지된다.
+    private bool CanGrabOnce() => !IsGrabbing && !IsLiveRunning;
+
+    // Live 정지는 항상 허용하고, 시작만 Single Grab 완료 후로 제한한다.
+    private bool CanToggleLive() => !IsGrabbing;
+
+    [RelayCommand(CanExecute = nameof(CanGrabOnce))]
     private async Task GrabOnceAsync()
     {
-        if (IsLiveRunning || IsLiveLoopActive) return;
+        if (!CanGrabOnce()) return;
+        IsGrabbing = true;
         try
         {
             var result = await GrabCurrentRoiAsync();
@@ -62,11 +76,17 @@ public partial class MainViewModel : ObservableObject
         {
             ReportError(ex);
         }
+        finally
+        {
+            IsGrabbing = false;
+        }
     }
 
-    [RelayCommand(AllowConcurrentExecutions = true)]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanToggleLive))]
     private async Task ToggleLiveAsync()
     {
+        if (IsGrabbing) return;
+
         // 이전 루프가 아직 끝나지 않았다면(정지 진행 중 포함) 새 세션을 시작하지 않고
         // 정지를 요청한 뒤 루프 종료까지 기다린다.
         if (IsLiveLoopActive)

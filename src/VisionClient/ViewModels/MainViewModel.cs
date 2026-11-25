@@ -15,7 +15,9 @@ public partial class MainViewModel : ObservableObject
     private const int ImageWidth = 1280;
     private const int ImageHeight = 1024;
     private readonly IVisionService _visionService;
+    // 현재 Live 세션의 취소 소스와 루프 Task. 세션이 끝나면 루프 자신이 정리한다.
     private CancellationTokenSource? _liveCts;
+    private Task? _liveTask;
 
     [ObservableProperty]
     private WriteableBitmap _displayImage;
@@ -30,7 +32,14 @@ public partial class MainViewModel : ObservableObject
     private string _cycleTimeText = "0.0 ms";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GrabOnceCommand))]
     private bool _isLiveRunning;
+
+    // Single Grab 진행 중 여부. Single Grab과 Live 검사는 동시에 실행되지 않는다.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GrabOnceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleLiveCommand))]
+    private bool _isGrabbing;
 
     // [3단계 추가] 사용자 지정 ROI 및 검출된 결함 벡터 컬렉션
     [ObservableProperty]
@@ -45,42 +54,96 @@ public partial class MainViewModel : ObservableObject
         _displayImage = new WriteableBitmap(ImageWidth, ImageHeight, 96, 96, PixelFormats.Bgr24, null);
     }
 
-    [RelayCommand]
+    private bool IsLiveLoopActive => _liveTask is { IsCompleted: false };
+
+    // IsLiveRunning은 Live 루프가 완전히 끝날 때(루프의 finally)까지 true로 유지된다.
+    private bool CanGrabOnce() => !IsGrabbing && !IsLiveRunning;
+
+    // Live 정지는 항상 허용하고, 시작만 Single Grab 완료 후로 제한한다.
+    private bool CanToggleLive() => !IsGrabbing;
+
+    [RelayCommand(CanExecute = nameof(CanGrabOnce))]
     private async Task GrabOnceAsync()
     {
-        if (IsLiveRunning) return;
-        var result = await GrabCurrentRoiAsync();
-        ApplyResultToUi(result);
-    }
-
-    [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task ToggleLiveAsync()
-    {
-        if (IsLiveRunning)
-        {
-            _liveCts?.Cancel();
-            IsLiveRunning = false;
-            return;
-        }
-
-        IsLiveRunning = true;
-        _liveCts = new CancellationTokenSource();
-
+        if (!CanGrabOnce()) return;
+        IsGrabbing = true;
         try
         {
-            while (!_liveCts.Token.IsCancellationRequested)
-            {
-                var result = await GrabCurrentRoiAsync(_liveCts.Token);
-                ApplyResultToUi(result);
-            }
+            var result = await GrabCurrentRoiAsync();
+            ApplyResultToUi(result);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            AddLog("Live inspection stopped.");
+            ReportError(ex);
         }
         finally
         {
-            IsLiveRunning = false;
+            IsGrabbing = false;
+        }
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanToggleLive))]
+    private async Task ToggleLiveAsync()
+    {
+        if (IsGrabbing) return;
+
+        // 이전 루프가 아직 끝나지 않았다면(정지 진행 중 포함) 새 세션을 시작하지 않고
+        // 정지를 요청한 뒤 루프 종료까지 기다린다.
+        if (IsLiveLoopActive)
+        {
+            await StopLiveAsync();
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _liveCts = cts;
+        IsLiveRunning = true;
+        _liveTask = RunLiveLoopAsync(cts);
+        await _liveTask;
+    }
+
+    private async Task StopLiveAsync()
+    {
+        var task = _liveTask;
+        if (task is null) return;
+
+        _liveCts?.Cancel();
+        // 진행 중인 프레임까지 끝난 뒤 루프의 finally에서 상태가 초기화된다.
+        await task;
+    }
+
+    private async Task RunLiveLoopAsync(CancellationTokenSource cts)
+    {
+        // 세션별 토큰을 지역 변수로 고정해 이후 세션의 _liveCts와 섞이지 않게 한다.
+        var token = cts.Token;
+        AddLog("Live inspection started.");
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                var result = await GrabCurrentRoiAsync(token);
+                if (token.IsCancellationRequested) break;
+                ApplyResultToUi(result);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // 정상 정지
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex);
+        }
+        finally
+        {
+            // 자기 세션일 때만 공유 상태를 초기화한다.
+            if (ReferenceEquals(_liveCts, cts))
+            {
+                _liveCts = null;
+                IsLiveRunning = false;
+            }
+            cts.Dispose();
+            AddLog("Live inspection stopped.");
         }
     }
 
@@ -130,6 +193,13 @@ public partial class MainViewModel : ObservableObject
             CycleTimeText = $"{result.ProcessTimeMs:F1} ms";
             AddLog(result.Message);
         });
+    }
+
+    private void ReportError(Exception ex)
+    {
+        StatusText = "ERROR";
+        StatusColor = Brushes.OrangeRed;
+        AddLog($"Error: {ex.GetType().Name} - {ex.Message}");
     }
 
     private void AddLog(string message)
